@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Absensi Kelas Modern</title>
+    <style>
+        /* CSS UNTUK TAMPILAN */
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            /* Ganti URL di bawah dengan gambar latar belakang pilihanmu */
+            background: url('https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=1600&auto=format&fit=crop') no-repeat center center fixed;
+            background-size: cover;
+            color: #333;
+        }
+
+        .overlay {
+            background: rgba(0, 0, 0, 0.7);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 600px;
+            backdrop-filter: blur(5px);
+        }
+
+        h2 { text-align: center; color: #2c3e50; margin-bottom: 20px; }
+
+        label { font-weight: bold; font-size: 14px; display: block; margin-top: 10px; }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            transition: 0.3s;
+            margin-top: 10px;
+        }
+
+        .btn-primary { background: #27ae60; color: white; }
+        .btn-primary:hover { background: #219150; }
+
+        .btn-secondary { background: #3498db; color: white; }
+        .btn-secondary:hover { background: #2980b9; }
+
+        /* Style Tabel Rekap */
+        .rekap-group { margin-top: 20px; border-top: 2px solid #3498db; padding-top: 10px; }
+        .tanggal-header { background: #3498db; color: white; padding: 5px 10px; border-radius: 5px; display: inline-block; margin-bottom: 10px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; }
+        table, th, td { border: 1px solid #ddd; }
+        th, td { padding: 10px; text-align: left; }
+        th { background: #f2f2f2; }
+
+        .status-izin { color: #f39c12; font-weight: bold; }
+        .status-sakit { color: #e74c3c; font-weight: bold; }
+        .status-hadir { color: #27ae60; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="overlay">
+    <section id="absensi-section" class="card">
+        <h2>📝 Form Absensi Siswa</h2>
+        <form id="absenForm">
+            <label>Nama Lengkap</label>
+            <input type="text" id="nama" placeholder="Contoh: Budi Santoso" required>
+
+            <label>Kelas</label>
+            <select id="kelas" required>
+                <option value="X-IPA">XI-TP-B</option>
+            </select>
+
+            <label>Status Kehadiran</label>
+            <select id="status" onchange="toggleKeterangan()" required>
+                <option value="">-- Pilih Status Kehadiran --</option>
+                <option value="Izin">Izin</option>
+                <option value="Sakit">Sakit</option>
+            </select>
+
+            <div id="box-keterangan" style="display:none;">
+                <label>Keterangan Tambahan</label>
+                <textarea id="keterangan" placeholder="Berikan alasan kenapa Izin/Sakit..."></textarea>
+            </div>
+
+            <button type="submit" class="btn-primary">Kirim Absensi</button>
+        </form>
+        <button class="btn-secondary" onclick="switchView('data-section')">Lihat Rekap Data (Admin)</button>
+    </section>
+
+    <section id="data-section" class="card" style="display:none;">
+        <h2>📊 Rekap Data Absensi</h2>
+        
+        <div id="login-admin">
+            <p style="text-align:center;">Halaman ini dilindungi password.</p>
+            <input type="password" id="adminPass" placeholder="Masukkan Password Admin">
+            <button class="btn-primary" onclick="checkPassword()">Masuk</button>
+            <button class="btn-secondary" onclick="switchView('absensi-section')">Kembali</button>
+        </div>
+
+        <div id="rekap-container" style="display:none;">
+            <div id="list-rekap">
+                <p style="text-align:center;">Memuat data...</p>
+            </div>
+            <button class="btn-secondary" onclick="switchView('absensi-section')">Keluar / Kembali</button>
+        </div>
+    </section>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+    import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+
+    // --- KONFIGURASI FIREBASE ANDA ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyCweBMNC6kuuH-g6qIYLb3VZdoJ7mX4Bvc",
+        authDomain: "absen-kelas-a8887.firebaseapp.com",
+        projectId: "absen-kelas-a8887",
+        storageBucket: "absen-kelas-a8887.firebasestorage.app",
+        messagingSenderId: "772998949529",
+        appId: "1:772998949529:web:41139ab83019555582e608"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // Fungsi Toggle Keterangan
+    window.toggleKeterangan = () => {
+        const status = document.getElementById('status').value;
+        const box = document.getElementById('box-keterangan');
+        const ketInput = document.getElementById('keterangan');
+        
+        if (status === 'Hadir') {
+            box.style.display = 'none';
+            ketInput.required = false;
+        } else {
+            box.style.display = 'block';
+            ketInput.required = true;
+        }
+    };
+
+    // Fungsi Pindah Halaman
+    window.switchView = (id) => {
+        document.getElementById('absensi-section').style.display = 'none';
+        document.getElementById('data-section').style.display = 'none';
+        document.getElementById(id).style.display = 'block';
+    };
+
+    // SIMPAN DATA KE FIREBASE
+    document.getElementById('absenForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const date = new Date();
+        const labelHari = date.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+        const data = {
+            nama: document.getElementById('nama').value,
+            status: document.getElementById('status').value,
+            keterangan: document.getElementById('keterangan').value || "-",
+            tanggal: labelHari,
+            timestamp: new Date()
+        };
+
+        try {
+            await addDoc(collection(db, "absensi_siswa"), data);
+            alert("✅ Absensi Berhasil Terkirim!");
+            e.target.reset();
+            window.toggleKeterangan();
+        } catch (error) {
+            console.error("Error adding document: ", error);
+            alert("Gagal mengirim absen. Cek console log.");
+        }
+    });
+
+    // CEK PASSWORD ADMIN
+    window.checkPassword = () => {
+        const pass = document.getElementById('adminPass').value;
+        if(pass === "12345") { // <--- Silahkan ganti password ini
+            document.getElementById('login-admin').style.display = 'none';
+            document.getElementById('rekap-container').style.display = 'block';
+            loadData();
+        } else {
+            alert("Password Salah!");
+        }
+    };
+
+    // AMBIL DATA, URUTKAN ABJAD, & KELOMPOKKAN BERDASARKAN TANGGAL
+    async function loadData() {
+        const container = document.getElementById('list-rekap');
+        container.innerHTML = "Memuat data...";
+        
+        try {
+            // Kita ambil data tetap urut waktu terbaru dulu
+            const q = query(collection(db, "absensi_siswa"), orderBy("timestamp", "desc"));
+            const querySnapshot = await getDocs(q);
+            
+            const dataByDate = {};
+
+            querySnapshot.forEach((doc) => {
+                const item = doc.data();
+                if (!dataByDate[item.tanggal]) {
+                    dataByDate[item.tanggal] = [];
+                }
+                dataByDate[item.tanggal].push(item);
+            });
+
+            // Membuat tampilan HTML
+            let htmlContent = "";
+            
+            // Mengambil tanggal (Key) dan menampilkannya
+            for (const tgl in dataByDate) {
+                
+                // --- BAGIAN PENTING: MENGURUTKAN NAMA A-Z ---
+                const dataTerurut = dataByDate[tgl].sort((a, b) => {
+                    return a.nama.localeCompare(b.nama);
+                });
+                // -------------------------------------------
+
+                htmlContent += `
+                    <div class="rekap-group">
+                        <div class="tanggal-header">${tgl}</div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Nama (A-Z)</th>
+                                    <th>Status</th>
+                                    <th>Ket</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${dataTerurut.map(s => `
+                                    <tr>
+                                        <td>${s.nama.toUpperCase()} <br><small>${s.kelas}</small></td>
+                                        <td class="status-${s.status.toLowerCase()}">${s.status}</td>
+                                        <td>${s.keterangan}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+            container.innerHTML = htmlContent || "Belum ada data absensi.";
+            
+        } catch (error) {
+            container.innerHTML = "Gagal memuat data.";
+            console.error(error);
+        }
+    }
+</script>
+
+</body>
+</html>
